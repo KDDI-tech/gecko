@@ -21,7 +21,9 @@ Cu.import("resource://gre/modules/PhoneNumberUtils.jsm");
 Cu.importGlobalProperties(["indexedDB"]);
 
 const DB_NAME = "contacts";
-const DB_VERSION = 18;
+// KTEC ADD START
+const DB_VERSION = 19;
+// KTEC ADD END
 const STORE_NAME = "contacts";
 const SAVED_GETALL_STORE_NAME = "getallcache";
 const CHUNK_SIZE = 20;
@@ -178,6 +180,12 @@ ContactDB.prototype = {
       objectStore.createIndex("category", "properties.category", { multiEntry: true });
       objectStore.createIndex("email", "search.email", { multiEntry: true });
       objectStore.createIndex("telMatch", "search.parsedTel", {multiEntry: true});
+// KTEC ADD START
+      objectStore.createIndex("phoneticFamilyName", "properties.phoneticFamilyName", { multiEntry: true });
+      objectStore.createIndex("phoneticGivenName",  "properties.phoneticGivenName",  { multiEntry: true });
+      objectStore.createIndex("phoneticFamilyNameLowerCase", "search.phoneticFamilyName", { multiEntry: true });
+      objectStore.createIndex("phoneticGivenNameLowerCase",  "search.phoneticGivenName",  { multiEntry: true });
+// KTEC ADD END
       aDb.createObjectStore(SAVED_GETALL_STORE_NAME);
       aDb.createObjectStore(REVISION_STORE).put(0, REVISION_KEY);
     }
@@ -730,6 +738,49 @@ ContactDB.prototype = {
           }
         };
       },
+      // KTEC ADD START
+      // TODO Modify when corresponding to the data store API.
+      function upgrade18to19() {
+        if (DEBUG) debug("upgrade18to19 create schema(phonetic)");
+        if (!objectStore) {
+          objectStore = aTransaction.objectStore(STORE_NAME);
+        }
+        objectStore.createIndex("phoneticFamilyName", "properties.phoneticFamilyName", { multiEntry: true });
+        objectStore.createIndex("phoneticGivenName",  "properties.phoneticGivenName",  { multiEntry: true });
+        objectStore.createIndex("phoneticFamilyNameLowerCase", "search.phoneticFamilyName", { multiEntry: true });
+        objectStore.createIndex("phoneticGivenNameLowerCase",  "search.phoneticGivenName",  { multiEntry: true });
+
+        objectStore.openCursor().onsuccess = function(event) {
+          let cursor = event.target.result;
+          let changed = false;
+          if (cursor) {
+            let value = cursor.value;
+            value.search.phoneticFamilyName = [];
+            if (value.properties.phoneticFamilyName) {
+              value.properties.phoneticFamilyName.forEach(function addPhoneticFamilyNameIndex(phoneticFamilyName) {
+                value.search.phoneticFamilyName.push(phoneticFamilyName.toLowerCase());
+              });
+              changed = true;
+            }
+
+            value.search.phoneticGivenName = [];
+            if (value.properties.phoneticGivenName) {
+              value.properties.phoneticGivenName.forEach(function addPhoneticGivenNameIndex(phoneticGivenName) {
+                value.search.phoneticGivenName.push(phoneticGivenName.toLowerCase());
+              });
+              changed = true;
+            }
+            
+            if (changed) {
+              cursor.update(value);
+            }
+            cursor.continue();
+          } else {
+            next();
+          }
+        };
+      },
+      // KTEC ADD END
     ];
 
     let index = aOldVersion;
@@ -779,6 +830,10 @@ ContactDB.prototype = {
       tel:             [],
       exactTel:        [],
       parsedTel:       [],
+      // KTEC ADD START
+      phoneticFamilyName:   [],
+      phoneticGivenName:    [],
+      // KTEC ADD END
     };
 
     for (let field in aContact.properties) {
@@ -1070,6 +1125,30 @@ ContactDB.prototype = {
     }, null, aErrorCb);
   },
 
+  // KTEC ADD START
+  getSortByParam: function CDB_getSortByParam(aFindOptions) {
+    let sortBy;
+    switch (aFindOptions.sortBy) {
+      case "familyName":
+        sortBy = [ "familyName", "givenName" ];
+        break;
+      case "givenName":
+        sortBy = [ "givenName" , "familyName" ];
+        break;
+      case "phoneticFamilyName":
+        sortBy = [ "phoneticFamilyName" , "phoneticGivenName" ];
+        break;
+      case "phoneticGivenName":
+        sortBy = [ "phoneticGivenName" , "phoneticFamilyName" ];
+        break;
+      default:
+        sortBy = [ "givenName" , "familyName" ];
+        break;
+    }
+    return sortBy;
+  },
+  // KTEC ADD END
+
   /*
    * Sorting the contacts by sortBy field. aSortBy can either be familyName or givenName.
    * If 2 entries have the same sortyBy field or no sortBy field is present, we continue
@@ -1080,7 +1159,9 @@ ContactDB.prototype = {
       return;
     if (aFindOptions.sortBy != "undefined") {
       const sortOrder = aFindOptions.sortOrder;
-      const sortBy = aFindOptions.sortBy == "familyName" ? [ "familyName", "givenName" ] : [ "givenName" , "familyName" ];
+      // KTEC MOD START
+      const sortBy = this.getSortByParam(aFindOptions);
+      // KTEC MOD END
 
       aResults.sort(function (a, b) {
         let x, y;

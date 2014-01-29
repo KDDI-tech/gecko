@@ -53,6 +53,10 @@ dictionary ContactProperties {
   sequence<DOMString>?           jobTitle;
   sequence<DOMString>?           note;
   sequence<DOMString>?           key;
+// KTEC ADD START
+  sequence<DOMString>?           phoneticFamilyName;
+  sequence<DOMString>?           phoneticGivenName;
+// KTEC ADD END
 };
 
 [Constructor(optional ContactProperties properties),
@@ -90,6 +94,10 @@ interface mozContact {
   [Cached, Pure] attribute sequence<DOMString>?       jobTitle;
   [Cached, Pure] attribute sequence<DOMString>?       note;
   [Cached, Pure] attribute sequence<DOMString>?       key;
+// KTEC ADD START
+  [Cached, Pure] attribute sequence<DOMString>?       phoneticFamilyName;
+  [Cached, Pure] attribute sequence<DOMString>?       phoneticGivenName;
+// KTEC ADD END
 
   void init(optional ContactProperties properties);
 
