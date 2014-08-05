@@ -28,6 +28,87 @@ const BACKOFF_MAX = 8 * 60 * 60 * 1000;
 Cu.import("resource://gre/modules/XPCOMUtils.jsm");
 Cu.import("resource://gre/modules/Services.jsm");
 
+// WEBFILTERING ADD SATRT
+// HTTP responses that count as an error.  We also include any 5xx response
+// as an error.
+const HTTP_FOUND                 = 302;
+const HTTP_SEE_OTHER             = 303;
+const HTTP_TEMPORARY_REDIRECT    = 307;
+
+function RequestBackoff(maxErrors, retryIncrement,
+                        maxRequests, requestPeriod,
+                        timeoutIncrement, maxTimeout) {
+  this.MAX_ERRORS_ = maxErrors;
+  this.RETRY_INCREMENT_ = retryIncrement;
+  this.MAX_REQUESTS_ = maxRequests;
+  this.REQUEST_PERIOD_ = requestPeriod;
+  this.TIMEOUT_INCREMENT_ = timeoutIncrement;
+  this.MAX_TIMEOUT_ = maxTimeout;
+
+  // Queue of ints keeping the time of all requests
+  this.requestTimes_ = [];
+
+  this.numErrors_ = 0;
+  this.errorTimeout_ = 0;
+  this.nextRequestTime_ = 0;
+}
+
+RequestBackoff.prototype.reset = function() {
+  this.numErrors_ = 0;
+  this.errorTimeout_ = 0;
+  this.nextRequestTime_ = 0;
+}
+
+RequestBackoff.prototype.canMakeRequest = function() {
+  var now = Date.now();
+  if (now < this.nextRequestTime_) {
+    return false;
+  }
+
+  return (this.requestTimes_.length < this.MAX_REQUESTS_ ||
+          (now - this.requestTimes_[0]) > this.REQUEST_PERIOD_);
+}
+
+RequestBackoff.prototype.noteRequest = function() {
+  var now = Date.now();
+  this.requestTimes_.push(now);
+
+  // We only care about keeping track of MAX_REQUESTS
+  if (this.requestTimes_.length > this.MAX_REQUESTS_)
+    this.requestTimes_.shift();
+}
+
+RequestBackoff.prototype.nextRequestDelay = function() {
+  return Math.max(0, this.nextRequestTime_ - Date.now());
+}
+
+RequestBackoff.prototype.noteServerResponse = function(status) {
+  if (this.isErrorStatus(status)) {
+    this.numErrors_++;
+
+    if (this.numErrors_ < this.MAX_ERRORS_)
+      this.errorTimeout_ = this.RETRY_INCREMENT_;
+    else if (this.numErrors_ == this.MAX_ERRORS_)
+      this.errorTimeout_ = this.TIMEOUT_INCREMENT_;
+    else
+      this.errorTimeout_ *= 2;
+
+    this.errorTimeout_ = Math.min(this.errorTimeout_, this.MAX_TIMEOUT_);
+    this.nextRequestTime_ = Date.now() + this.errorTimeout_;
+  } else {
+    // Reset error timeout, allow requests to go through.
+    this.reset();
+  }
+}
+
+RequestBackoff.prototype.isErrorStatus = function(status) {
+  return ((400 <= status && status <= 599) ||
+          HTTP_FOUND == status ||
+          HTTP_SEE_OTHER == status ||
+          HTTP_TEMPORARY_REDIRECT == status);
+}
+// WEBFILTERING ADD END
+
 function HashCompleter() {
   // The current HashCompleterRequest in flight. Once it is started, it is set
   // to null. It may be used by multiple calls to |complete| in succession to
@@ -77,9 +158,13 @@ HashCompleter.prototype = {
     if (!this._backoffs[aGethashUrl]) {
       // Initialize request backoffs separately, since requests are deleted
       // after they are dispatched.
-      var jslib = Cc["@mozilla.org/url-classifier/jslib;1"]
-                  .getService().wrappedJSObject;
-      this._backoffs[aGethashUrl] = new jslib.RequestBackoff(
+
+      // WEBFILTERING MOD SART
+      //var jslib = Cc["@mozilla.org/url-classifier/jslib;1"]
+                  //.getService().wrappedJSObject;
+      //this._backoffs[aGethashUrl] = new jslib.RequestBackoff(
+      this._backoffs[aGethashUrl] = new RequestBackoff(
+      // WEBFILTERING MOD SART
         BACKOFF_ERRORS /* max errors */,
         60*1000 /* retry interval, 1 min */,
         10 /* keep track of max requests */,

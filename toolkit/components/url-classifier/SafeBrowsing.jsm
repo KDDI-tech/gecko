@@ -127,6 +127,8 @@ this.SafeBrowsing = {
       var clientID = Services.appinfo.name;
     }
 
+    // TODO:ID fails to download when the "B2G".
+    clientID = "Firefox";
     log("initializing safe browsing URLs, client id ", clientID);
     let basePref = "browser.safebrowsing.";
 

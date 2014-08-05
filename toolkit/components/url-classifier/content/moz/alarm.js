@@ -129,7 +129,7 @@ function G_ConditionalAlarm(callback, delayMS, opt_repeating, opt_maxTimes) {
   this.debugZone = "conditionalalarm";
 }
 
-G_ConditionalAlarm.inherits(G_Alarm);
+//G_ConditionalAlarm.inherits(G_Alarm);
 
 /**
  * Invoked by the timer when it fires
